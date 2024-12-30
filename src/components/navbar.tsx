@@ -1,53 +1,89 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useSession, signOut } from 'next-auth/react'
 import Link from 'next/link'
-import { Compass, PlusCircle, MessageCircle, Settings, LogOut } from 'lucide-react'
+import Image from 'next/image'
+import { LogOut, Search, MessageCircle, Settings } from 'lucide-react'
 
 export function Navbar() {
   const { data: session } = useSession()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted || !session) return null
 
   return (
-    <nav className="fixed bottom-6 left-1/2 transform -translate-x-1/2 w-[60%] bg-white/80 backdrop-blur-md rounded-lg shadow-lg p-4">
-      <div className="flex justify-around items-center">
-        {session ? (
-          // Authenticated navigation
-          <>
-            <Link href="/explore" className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors">
-              <Compass className="w-6 h-6" />
-              <span className="text-sm">Explore</span>
-            </Link>
+    <nav className="fixed bottom-0 left-0 right-0 md:top-0 md:bottom-auto bg-white border-t md:border-b border-gray-200 z-40">
+      <div className="max-w-screen-xl mx-auto px-4">
+        <div className="flex items-center justify-between h-16">
+          {/* Left side - Logo (hidden on mobile) */}
+          <Link href="/" className="hidden md:flex items-center space-x-2">
+            <Image src="/logo.png" alt="Logo" width={32} height={32} />
+            <span className="font-bold text-xl">Skillshare</span>
+          </Link>
 
-            <Link href="/posts" className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors">
-              <PlusCircle className="w-6 h-6" />
-              <span className="text-sm">Posts</span>
-            </Link>
-
-            <Link href="/messages" className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors">
-              <MessageCircle className="w-6 h-6" />
-              <span className="text-sm">Messages</span>
-            </Link>
-
-            <Link href="/settings" className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors">
-              <Settings className="w-6 h-6" />
-              <span className="text-sm">Settings</span>
-            </Link>
-
+          {/* Center - Navigation Links */}
+          <div className="flex items-center justify-around md:justify-center w-full md:w-auto space-x-1 md:space-x-4">
             <button
-              onClick={() => signOut({ callbackUrl: '/' })}
-              className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors"
+              onClick={() => signOut()}
+              className="p-2 text-gray-700 hover:text-blue-500 transition-colors"
+              title="Sign Out"
             >
               <LogOut className="w-6 h-6" />
-              <span className="text-sm">Sign Out</span>
             </button>
-          </>
-        ) : (
-          // Unauthenticated navigation
-          <Link href="/auth/signin" className="flex flex-col items-center text-gray-600 hover:text-blue-600 transition-colors">
-            <PlusCircle className="w-6 h-6" />
-            <span className="text-sm">Sign In</span>
-          </Link>
-        )}
+
+            <Link
+              href="/explore"
+              className="p-2 text-gray-700 hover:text-blue-500 transition-colors"
+              title="Explore"
+            >
+              <Search className="w-6 h-6" />
+            </Link>
+
+            <Link
+              href="/posts"
+              className="p-2 text-gray-700 hover:text-blue-500 transition-colors"
+              title="Posts"
+            >
+              <svg 
+                className="w-6 h-6"
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <line x1="3" y1="9" x2="21" y2="9"/>
+                <line x1="9" y1="21" x2="9" y2="9"/>
+              </svg>
+            </Link>
+
+            <Link
+              href="/messages"
+              className="p-2 text-gray-700 hover:text-blue-500 transition-colors"
+              title="Messages"
+            >
+              <MessageCircle className="w-6 h-6" />
+            </Link>
+
+            <Link
+              href="/settings"
+              className="p-2 text-gray-700 hover:text-blue-500 transition-colors"
+              title="Settings"
+            >
+              <Settings className="w-6 h-6" />
+            </Link>
+          </div>
+
+          {/* Right side spacer (hidden on mobile) */}
+          <div className="hidden md:block w-[88px]"></div>
+        </div>
       </div>
     </nav>
   )

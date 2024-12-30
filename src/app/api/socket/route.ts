@@ -1,83 +1,105 @@
-import { NextRequest } from 'next/server'
-import { Server as ServerIO } from 'socket.io'
-import { createServer } from 'http'
+import { Server } from 'socket.io'
+import { NextResponse } from 'next/server'
 
-export const dynamic = 'force-dynamic'
-export const fetchCache = 'force-no-store'
+const connectedUsers = new Map<string, string>()
 
-let io: ServerIO | null = null
-let httpServer: any = null
-
-if (!io) {
-  httpServer = createServer()
-  io = new ServerIO(httpServer, {
+if (!global.io) {
+  global.io = new Server({
     cors: {
       origin: '*',
       methods: ['GET', 'POST'],
-      credentials: true,
     },
-    transports: ['polling'],
-    connectTimeout: 45000,
-    pingTimeout: 30000,
-  })
-
-  io.on('connection', (socket) => {
-    console.log('Client connected')
-
-    socket.on('disconnect', () => {
-      console.log('Client disconnected')
-    })
-
-    socket.on('error', (error) => {
-      console.error('Socket error:', error)
-    })
-
-    socket.on('postCreated', (data) => {
-      io.emit('postCreated', data)
-    })
-
-    socket.on('postLiked', (data) => {
-      io.emit('postLiked', data)
-    })
-
-    socket.on('postDeleted', (data) => {
-      io.emit('postDeleted', data)
-    })
-
-    socket.on('postUpdated', (data) => {
-      io.emit('postUpdated', data)
-    })
-
-    socket.on('message', (data) => {
-      io.emit('message', data)
-    })
-  })
-
-  const port = parseInt(process.env.SOCKET_PORT || '3001', 10)
-  httpServer.listen(port, () => {
-    console.log(`Socket.IO server running on port ${port}`)
   })
 }
 
-export async function GET(req: NextRequest) {
-  if (!io) {
-    return new Response('Socket.io server not initialized', { status: 500 })
+export async function GET() {
+  if (!global.io.httpServer?.listening) {
+    const port = parseInt(process.env.SOCKET_PORT || '3001')
+    global.io.listen(port)
+
+    global.io.on('connection', (socket) => {
+      console.log('Client connected:', socket.id)
+
+      socket.on('join', (userId: string) => {
+        console.log('User joined:', userId)
+        connectedUsers.set(userId, socket.id)
+        socket.userId = userId
+      })
+
+      socket.on('private message', async (data) => {
+        const recipientSocket = connectedUsers.get(data.recipientId)
+        if (recipientSocket) {
+          global.io.to(recipientSocket).emit('private message', data)
+        }
+      })
+
+      // Video call events
+      socket.on('call-user', async (data) => {
+        console.log('Call user event:', data)
+        const recipientSocket = connectedUsers.get(data.recipientId)
+        if (recipientSocket) {
+          console.log('Emitting incoming call to:', recipientSocket)
+          global.io.to(recipientSocket).emit('incoming-call', {
+            from: socket.userId,
+            offer: data.offer,
+            callerName: data.callerInfo.name,
+            callerImage: data.callerInfo.image
+          })
+        } else {
+          console.log('Recipient not found:', data.recipientId)
+        }
+      })
+
+      socket.on('accept-call', (data) => {
+        console.log('Accept call event:', data)
+        const callerSocket = connectedUsers.get(data.callerId)
+        if (callerSocket) {
+          global.io.to(callerSocket).emit('call-accepted', {
+            answer: data.answer,
+            from: socket.userId
+          })
+        }
+      })
+
+      socket.on('reject-call', (data) => {
+        console.log('Reject call event:', data)
+        const callerSocket = connectedUsers.get(data.callerId)
+        if (callerSocket) {
+          global.io.to(callerSocket).emit('call-rejected', {
+            from: socket.userId
+          })
+        }
+      })
+
+      socket.on('ice-candidate', (data) => {
+        console.log('ICE candidate event:', data)
+        const recipientSocket = connectedUsers.get(data.recipientId)
+        if (recipientSocket) {
+          global.io.to(recipientSocket).emit('ice-candidate', {
+            candidate: data.candidate,
+            from: socket.userId
+          })
+        }
+      })
+
+      socket.on('end-call', (data) => {
+        console.log('End call event:', data)
+        const recipientSocket = connectedUsers.get(data.recipientId)
+        if (recipientSocket) {
+          global.io.to(recipientSocket).emit('call-ended', {
+            from: socket.userId
+          })
+        }
+      })
+
+      socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id)
+        if (socket.userId) {
+          connectedUsers.delete(socket.userId)
+        }
+      })
+    })
   }
 
-  return new Response(null, { status: 200 })
-}
-
-export async function POST(req: NextRequest) {
-  if (!io) {
-    return new Response('Socket.io server not initialized', { status: 500 })
-  }
-
-  try {
-    const data = await req.json()
-    io.emit(data.event, data.payload)
-    return new Response(null, { status: 200 })
-  } catch (error) {
-    console.error('Socket emit error:', error)
-    return new Response('Failed to emit event', { status: 500 })
-  }
+  return NextResponse.json({ success: true })
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/mongodb'
 import User from '@/models/User'
+import Skill from '@/models/Skill'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
@@ -58,9 +59,42 @@ export async function PUT(
     await connectToDatabase()
     
     const body = await request.json()
+    const { skillsToShare, skillsToLearn, ...otherData } = body
+
+    // Process skills to share
+    const skillsToShareIds = await Promise.all(
+      (skillsToShare || []).map(async (skillData: { name: string }) => {
+        const skill = await Skill.findOneAndUpdate(
+          { name: skillData.name.toLowerCase() },
+          { name: skillData.name.toLowerCase() },
+          { upsert: true, new: true }
+        )
+        return skill._id
+      })
+    )
+
+    // Process skills to learn
+    const skillsToLearnIds = await Promise.all(
+      (skillsToLearn || []).map(async (skillData: { name: string }) => {
+        const skill = await Skill.findOneAndUpdate(
+          { name: skillData.name.toLowerCase() },
+          { name: skillData.name.toLowerCase() },
+          { upsert: true, new: true }
+        )
+        return skill._id
+      })
+    )
+
+    // Update user with processed skills
     const user = await User.findByIdAndUpdate(
       params.id,
-      { $set: body },
+      {
+        $set: {
+          ...otherData,
+          skillsToShare: skillsToShareIds,
+          skillsToLearn: skillsToLearnIds,
+        }
+      },
       { new: true }
     )
       .populate({

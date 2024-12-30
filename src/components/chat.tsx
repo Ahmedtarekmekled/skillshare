@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import Image from 'next/image'
 import { io, Socket } from 'socket.io-client'
-import { Send, X, Loader2, ArrowLeft } from 'lucide-react'
+import { Send, X, Loader2, ArrowLeft, Video, PhoneIncoming } from 'lucide-react'
+import VideoCall from './video-call'
+import { callRingSound, callEndSound } from '@/utils/sound'
 
 interface Message {
   _id: string
@@ -35,6 +37,8 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
   const [recipient, setRecipient] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [isInCall, setIsInCall] = useState(false)
+  const [incomingCall, setIncomingCall] = useState<{ offer: any } | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -54,8 +58,28 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
       }
     })
 
+    // Listen for incoming calls
+    socketInstance.on('incoming-call', ({ from, offer }) => {
+      if (from === recipientId) {
+        setIncomingCall({ offer })
+        // Start playing ring sound
+        callRingSound.play()
+      }
+    })
+
+    // Listen for call ended
+    socketInstance.on('call-ended', () => {
+      setIsInCall(false)
+      setIncomingCall(null)
+      // Stop ring sound and play end sound
+      callRingSound.stop()
+      callEndSound.play()
+    })
+
     return () => {
       socketInstance.disconnect()
+      // Cleanup sounds
+      callRingSound.stop()
     }
   }, [session?.user?.id, recipientId])
 
@@ -97,7 +121,6 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Format timestamp
   const formatMessageTime = (timestamp: string) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -154,12 +177,46 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
     }
   }
 
+  const startVideoCall = () => {
+    if (!socket) return
+    console.log('Starting video call with:', recipientId)
+    setIsInCall(true)
+    socket.emit('call-user', {
+      recipientId,
+      callerInfo: {
+        name: session?.user?.name || 'Unknown',
+        image: session?.user?.image || '/images/unknown.png',
+      }
+    })
+  }
+
+  const acceptCall = () => {
+    callRingSound.stop()
+    setIsInCall(true)
+  }
+
+  const rejectCall = () => {
+    if (socket && incomingCall) {
+      callRingSound.stop()
+      socket.emit('reject-call', { recipientId })
+      setIncomingCall(null)
+    }
+  }
+
+  const endVideoCall = () => {
+    callRingSound.stop()
+    callEndSound.play()
+    setIsInCall(false)
+    setIncomingCall(null)
+  }
+
   if (!recipient) return null
 
   const messageGroups = groupMessagesByDate(messages)
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      {/* Chat Header */}
       <div className="flex items-center justify-between p-4 bg-white border-b shadow-sm">
         <div className="flex items-center space-x-3">
           <button
@@ -184,14 +241,24 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
             </div>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="hidden md:block p-2 hover:bg-gray-100 rounded-full transition-colors"
-        >
-          <X className="h-5 w-5 text-gray-500" />
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={startVideoCall}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            title="Start video call"
+          >
+            <Video className="h-5 w-5 text-gray-500" />
+          </button>
+          <button
+            onClick={onClose}
+            className="hidden md:block p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
       </div>
 
+      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {loading ? (
           <div className="flex justify-center items-center h-full">
@@ -211,27 +278,24 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {groupMessages.map((message, index) => (
+                  {groupMessages.map((message) => (
                     <div
-                      key={message._id}
-                      className={`flex items-end space-x-2 ${message.sender._id === session?.user?.id ? 'justify-end' : ''}`}
+                      key={`${message._id}-${message.createdAt}`}
+                      className={`flex items-end space-x-2 ${
+                        message.sender._id === session?.user?.id ? 'justify-end' : ''
+                      }`}
                     >
                       {message.sender._id !== session?.user?.id && (
-                        index === 0 || 
-                        groupMessages[index - 1]?.sender._id !== message.sender._id
-                      ) && (
-                        <Image
-                          src={message.sender.image || '/images/unknown.png'}
-                          alt={message.sender.name}
-                          width={28}
-                          height={28}
-                          className="rounded-full mb-1"
-                        />
+                        <div className="flex-shrink-0 w-7">
+                          <Image
+                            src={message.sender.image || '/images/unknown.png'}
+                            alt={message.sender.name}
+                            width={28}
+                            height={28}
+                            className="rounded-full mb-1"
+                          />
+                        </div>
                       )}
-                      {message.sender._id !== session?.user?.id && (
-                        index !== 0 && 
-                        groupMessages[index - 1]?.sender._id === message.sender._id
-                      ) && <div className="w-7" />}
                       <div
                         className={`max-w-[75%] rounded-2xl px-4 py-2 ${
                           message.sender._id === session?.user?.id
@@ -240,9 +304,13 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
                         }`}
                       >
                         <p className="break-words whitespace-pre-wrap">{message.content}</p>
-                        <span className={`text-xs mt-1 block ${
-                          message.sender._id === session?.user?.id ? 'text-blue-100' : 'text-gray-400'
-                        }`}>
+                        <span 
+                          className={`text-xs mt-1 block ${
+                            message.sender._id === session?.user?.id 
+                              ? 'text-blue-100' 
+                              : 'text-gray-400'
+                          }`}
+                        >
                           {formatMessageTime(message.createdAt)}
                         </span>
                       </div>
@@ -256,6 +324,7 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Message Input */}
       <div className="p-4 bg-white border-t">
         <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
           <input
@@ -284,6 +353,59 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
           </button>
         </form>
       </div>
+
+      {/* Video Call Modal */}
+      {isInCall && socket && (
+        <VideoCall
+          socket={socket}
+          recipientId={recipientId}
+          recipientName={recipient.name}
+          recipientImage={recipient.image}
+          onClose={endVideoCall}
+          isIncoming={!!incomingCall}
+          incomingSignal={incomingCall?.offer}
+        />
+      )}
+
+      {/* Incoming Call Modal */}
+      {incomingCall && !isInCall && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center space-x-4 mb-6">
+              <div className="relative">
+                <Image
+                  src={recipient.image || '/images/unknown.png'}
+                  alt={recipient.name}
+                  width={60}
+                  height={60}
+                  className="rounded-full"
+                />
+                <div className="absolute -bottom-2 -right-2 bg-blue-500 p-2 rounded-full">
+                  <PhoneIncoming className="h-4 w-4 text-white" />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold text-lg">{recipient.name}</h3>
+                <p className="text-gray-500">Incoming video call...</p>
+              </div>
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={rejectCall}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                Decline
+              </button>
+              <button
+                onClick={acceptCall}
+                className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
