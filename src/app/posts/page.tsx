@@ -45,12 +45,11 @@ export default function PostsPage() {
   const [socket, setSocket] = useState<any>(null)
 
   useEffect(() => {
-    const newSocket = io('http://localhost:3000', {
-      path: '/api/socket',
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
+    const newSocket = io(socketUrl, {
       transports: ['polling'],
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
-      withCredentials: true,
     })
 
     setSocket(newSocket)
@@ -150,16 +149,32 @@ export default function PostsPage() {
 
   const handleLike = async (postId: string) => {
     try {
+      console.log('Attempting to like post:', postId)
       const response = await fetch(`/api/posts/${postId}/like`, {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       })
       
-      if (!response.ok) throw new Error('Failed to like post')
-      
       const data = await response.json()
-      if (socket) {
-        socket.emit('postLiked', data)
+      console.log('Response data:', data)
+      
+      if (!response.ok) {
+        throw new Error(data.error || data.details || 'Failed to like post')
+      }
+      
+      if (data.success) {
+        setPosts(prevPosts => 
+          prevPosts.map(post => 
+            post._id === data.postId 
+              ? { ...post, likes: Array.isArray(data.likes) ? data.likes : [] } 
+              : post
+          )
+        )
+      } else {
+        console.error('Unexpected response format:', data)
       }
     } catch (error) {
       console.error('Error liking post:', error)
@@ -205,7 +220,7 @@ export default function PostsPage() {
   }
 
   const handleMessageClick = (userId: string) => {
-    router.push(`/chat`)
+    router.push(`/messages?userId=${userId}`)
   }
 
   if (loading) {

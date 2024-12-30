@@ -6,18 +6,17 @@ export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
 let io: ServerIO | null = null
+let httpServer: any = null
 
 if (!io) {
-  const httpServer = createServer()
+  httpServer = createServer()
   io = new ServerIO(httpServer, {
-    path: '/api/socket',
-    addTrailingSlash: false,
-    transports: ['polling'],
     cors: {
       origin: '*',
       methods: ['GET', 'POST'],
       credentials: true,
     },
+    transports: ['polling'],
     connectTimeout: 45000,
     pingTimeout: 30000,
   })
@@ -27,6 +26,10 @@ if (!io) {
 
     socket.on('disconnect', () => {
       console.log('Client disconnected')
+    })
+
+    socket.on('error', (error) => {
+      console.error('Socket error:', error)
     })
 
     socket.on('message', (data) => {
@@ -45,6 +48,11 @@ if (!io) {
       io.emit('postUpdated', data)
     })
   })
+
+  const port = parseInt(process.env.SOCKET_PORT || '3001', 10)
+  httpServer.listen(port, () => {
+    console.log(`Socket.IO server running on port ${port}`)
+  })
 }
 
 export async function GET(req: NextRequest) {
@@ -52,9 +60,20 @@ export async function GET(req: NextRequest) {
     return new Response('Socket.io server not initialized', { status: 500 })
   }
 
-  if (req.headers.get('upgrade') === 'websocket') {
-    return new Response(null, { status: 101 })
+  return new Response(null, { status: 200 })
+}
+
+export async function POST(req: NextRequest) {
+  if (!io) {
+    return new Response('Socket.io server not initialized', { status: 500 })
   }
 
-  return new Response(null, { status: 200 })
+  try {
+    const data = await req.json()
+    io.emit(data.event, data.payload)
+    return new Response(null, { status: 200 })
+  } catch (error) {
+    console.error('Socket emit error:', error)
+    return new Response('Failed to emit event', { status: 500 })
+  }
 }

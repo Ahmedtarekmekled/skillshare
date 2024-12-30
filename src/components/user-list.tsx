@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
-import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { MessageCircle } from 'lucide-react'
-import Chat from './chat'
+import { useSession } from 'next-auth/react'
 
 interface Skill {
   _id: string
@@ -26,10 +26,11 @@ interface UserListProps {
 }
 
 export function UserList({ searchQuery = '' }: UserListProps) {
+  const router = useRouter()
+  const { data: session } = useSession()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedUser, setSelectedUser] = useState<string | null>(null)
 
   useEffect(() => {
     async function fetchUsers() {
@@ -42,7 +43,9 @@ export function UserList({ searchQuery = '' }: UserListProps) {
         if (!Array.isArray(data)) {
           throw new Error('Invalid data format received')
         }
-        setUsers(data)
+        // Filter out the current user
+        const filteredUsers = data.filter(user => user._id !== session?.user?.id)
+        setUsers(filteredUsers)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error loading users')
         console.error('Error:', err)
@@ -52,7 +55,7 @@ export function UserList({ searchQuery = '' }: UserListProps) {
     }
 
     fetchUsers()
-  }, [])
+  }, [session?.user?.id])
 
   const filteredUsers = users.filter(user => {
     if (!searchQuery) return true
@@ -67,9 +70,14 @@ export function UserList({ searchQuery = '' }: UserListProps) {
     return nameMatch || skillsMatch
   })
 
-  const handleMessageClick = (userId: string) => {
-    console.log('Opening chat with user:', userId)
-    setSelectedUser(userId)
+  const handleMessageClick = (userId: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!session) {
+      // Redirect to sign in if not authenticated
+      router.push('/auth/signin')
+      return
+    }
+    router.push(`/messages?userId=${userId}`)
   }
 
   return (
@@ -128,9 +136,12 @@ export function UserList({ searchQuery = '' }: UserListProps) {
                 </div>
               </div>
               <div className="mt-4 flex justify-end">
-                <Link href="/chat" className="text-blue-500 hover:text-blue-700">
+                <button
+                  onClick={(e) => handleMessageClick(user._id, e)}
+                  className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-full transition-colors"
+                >
                   <MessageCircle className="h-6 w-6" />
-                </Link>
+                </button>
               </div>
             </div>
           ))}

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Message from '@/models/Message'
 import { connectToDatabase } from '@/lib/mongodb'
+import mongoose from 'mongoose'
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,10 +27,25 @@ export async function GET(req: NextRequest) {
 
     await connectToDatabase()
 
+    const userId = new mongoose.Types.ObjectId(session.user.id)
+    const recipientObjectId = new mongoose.Types.ObjectId(recipientId)
+
+    // Mark messages as read
+    await Message.updateMany(
+      {
+        sender: recipientObjectId,
+        receiver: userId,
+        read: false
+      },
+      {
+        $set: { read: true }
+      }
+    )
+
     const messages = await Message.find({
       $or: [
-        { sender: session.user.id, receiver: recipientId },
-        { sender: recipientId, receiver: session.user.id }
+        { sender: userId, receiver: recipientObjectId },
+        { sender: recipientObjectId, receiver: userId }
       ]
     })
       .populate('sender', 'name image')
@@ -68,10 +84,13 @@ export async function POST(req: NextRequest) {
 
     await connectToDatabase()
 
+    const userId = new mongoose.Types.ObjectId(session.user.id)
+    const recipientObjectId = new mongoose.Types.ObjectId(receiverId)
+
     const message = await Message.create({
       content,
-      sender: session.user.id,
-      receiver: receiverId,
+      sender: userId,
+      receiver: recipientObjectId,
     })
 
     const populatedMessage = await Message.findById(message._id)

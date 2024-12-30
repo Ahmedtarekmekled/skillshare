@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import Image from 'next/image'
 import { io, Socket } from 'socket.io-client'
-import { Send, X } from 'lucide-react'
+import { Send, X, Loader2, ArrowLeft } from 'lucide-react'
 
 interface Message {
   _id: string
@@ -33,7 +33,10 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
   const [newMessage, setNewMessage] = useState('')
   const [socket, setSocket] = useState<Socket | null>(null)
   const [recipient, setRecipient] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const socketInstance = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001')
@@ -46,13 +49,15 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
 
     // Listen for new messages
     socketInstance.on('private message', (message: Message) => {
-      setMessages(prev => [...prev, message])
+      if (message.sender._id === recipientId || message.receiver._id === recipientId) {
+        setMessages(prev => [...prev, message])
+      }
     })
 
     return () => {
       socketInstance.disconnect()
     }
-  }, [session?.user?.id])
+  }, [session?.user?.id, recipientId])
 
   useEffect(() => {
     // Fetch recipient details
@@ -76,6 +81,8 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
         setMessages(data)
       } catch (error) {
         console.error('Error fetching messages:', error)
+      } finally {
+        setLoading(false)
       }
     }
 
@@ -90,11 +97,32 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Format timestamp
+  const formatMessageTime = (timestamp: string) => {
+    const date = new Date(timestamp)
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Group messages by date
+  const groupMessagesByDate = (messages: Message[]) => {
+    const groups: { [key: string]: Message[] } = {}
+    messages.forEach(message => {
+      const date = new Date(message.createdAt)
+      const dateKey = date.toLocaleDateString()
+      if (!groups[dateKey]) {
+        groups[dateKey] = []
+      }
+      groups[dateKey].push(message)
+    })
+    return groups
+  }
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newMessage.trim() || !socket || !session?.user?.id) return
+    if (!newMessage.trim() || !socket || !session?.user?.id || sending) return
 
     try {
+      setSending(true)
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: {
@@ -118,86 +146,143 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
 
       setMessages(prev => [...prev, message])
       setNewMessage('')
+      inputRef.current?.focus()
     } catch (error) {
       console.error('Error sending message:', error)
+    } finally {
+      setSending(false)
     }
   }
 
   if (!recipient) return null
 
+  const messageGroups = groupMessagesByDate(messages)
+
   return (
-    <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-lg shadow-lg">
-      <div className="flex flex-col h-full">
-        <div className="flex items-center justify-between p-4 border-b">
-          <div className="flex items-center mb-4">
+    <div className="flex flex-col h-full bg-gray-50">
+      <div className="flex items-center justify-between p-4 bg-white border-b shadow-sm">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={onClose}
+            className="md:hidden p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5 text-gray-500" />
+          </button>
+          <div className="flex items-center">
             <Image
               src={recipient?.image || '/images/unknown.png'}
               alt={recipient?.name || 'User'}
               width={40}
               height={40}
-              className="rounded-full mr-3"
+              className="rounded-full"
             />
-            <div>
+            <div className="ml-3">
               <h3 className="font-semibold">{recipient?.name}</h3>
+              {recipient?.isOnline && (
+                <p className="text-xs text-green-500">Online</p>
+              )}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X className="h-6 w-6" />
-          </button>
         </div>
+        <button
+          onClick={onClose}
+          className="hidden md:block p-2 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <X className="h-5 w-5 text-gray-500" />
+        </button>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-4 pb-32">
-          {messages.map((message) => (
-            <div
-              key={message._id}
-              className={`flex items-start mb-4 ${message.sender._id === session?.user?.id ? 'justify-end' : ''}`}
-            >
-              {message.sender._id !== session?.user?.id && (
-                <Image
-                  src={message.sender.image || '/images/unknown.png'}
-                  alt={message.sender.name}
-                  width={32}
-                  height={32}
-                  className="rounded-full mr-2"
-                />
-              )}
-              <div
-                className={`max-w-[70%] rounded-lg p-3 ${
-                  message.sender._id === session?.user?.id
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-100'
-                }`}
-              >
-                <p>{message.content}</p>
-                <span className="text-xs opacity-75 mt-1 block">
-                  {new Date(message.createdAt).toLocaleTimeString()}
-                </span>
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {loading ? (
+          <div className="flex justify-center items-center h-full">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {Object.entries(messageGroups).map(([date, groupMessages]) => (
+              <div key={date} className="space-y-4">
+                <div className="flex justify-center">
+                  <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded-full">
+                    {new Date(date).toLocaleDateString([], { 
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {groupMessages.map((message, index) => (
+                    <div
+                      key={message._id}
+                      className={`flex items-end space-x-2 ${message.sender._id === session?.user?.id ? 'justify-end' : ''}`}
+                    >
+                      {message.sender._id !== session?.user?.id && (
+                        index === 0 || 
+                        groupMessages[index - 1]?.sender._id !== message.sender._id
+                      ) && (
+                        <Image
+                          src={message.sender.image || '/images/unknown.png'}
+                          alt={message.sender.name}
+                          width={28}
+                          height={28}
+                          className="rounded-full mb-1"
+                        />
+                      )}
+                      {message.sender._id !== session?.user?.id && (
+                        index !== 0 && 
+                        groupMessages[index - 1]?.sender._id === message.sender._id
+                      ) && <div className="w-7" />}
+                      <div
+                        className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+                          message.sender._id === session?.user?.id
+                            ? 'bg-blue-500 text-white rounded-br-none'
+                            : 'bg-white border rounded-bl-none'
+                        }`}
+                      >
+                        <p className="break-words whitespace-pre-wrap">{message.content}</p>
+                        <span className={`text-xs mt-1 block ${
+                          message.sender._id === session?.user?.id ? 'text-blue-100' : 'text-gray-400'
+                        }`}>
+                          {formatMessageTime(message.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+            ))}
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-        <div className="absolute bottom-0 left-0 right-0 bg-white border-t p-4">
-          <form onSubmit={handleSendMessage} className="flex space-x-2">
-            <input
-              type="text"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
-            >
-              Send
-            </button>
-          </form>
-        </div>
+      <div className="p-4 bg-white border-t">
+        <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message..."
+            ref={inputRef}
+            className="flex-1 px-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+            disabled={sending}
+          />
+          <button
+            type="submit"
+            disabled={!newMessage.trim() || sending}
+            className={`p-2 rounded-full transition-colors ${
+              newMessage.trim() && !sending
+                ? 'bg-blue-500 text-white hover:bg-blue-600'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            }`}
+          >
+            {sending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+          </button>
+        </form>
       </div>
     </div>
   )

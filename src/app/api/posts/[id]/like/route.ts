@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Post from '@/models/Post'
 import { connectToDatabase } from '@/lib/mongodb'
+import mongoose from 'mongoose'
 
 export async function POST(
   request: NextRequest,
@@ -10,7 +11,7 @@ export async function POST(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -19,7 +20,12 @@ export async function POST(
 
     await connectToDatabase()
 
-    const post = await Post.findById(params.id)
+    // Convert IDs to ObjectId
+    const postId = new mongoose.Types.ObjectId(params.id)
+    const userId = new mongoose.Types.ObjectId(session.user.id)
+
+    // Find the post
+    const post = await Post.findById(postId)
     if (!post) {
       return NextResponse.json(
         { error: 'Post not found' },
@@ -27,26 +33,43 @@ export async function POST(
       )
     }
 
-    const userId = session.user.id
-    const userLikedIndex = post.likes.indexOf(userId)
-
-    if (userLikedIndex === -1) {
-      post.likes.push(userId)
-    } else {
-      post.likes.splice(userLikedIndex, 1)
+    // Initialize likes array if undefined
+    if (!post.likes) {
+      post.likes = []
     }
 
+    // Check if user already liked the post
+    const alreadyLiked = post.likes.some(id => id.toString() === userId.toString())
+
+    if (!alreadyLiked) {
+      // Add the like
+      post.likes.push(userId)
+    } else {
+      // Remove the like
+      post.likes = post.likes.filter(id => id.toString() !== userId.toString())
+    }
+
+    // Save the post
     await post.save()
 
+    // Get updated post with populated fields
+    const updatedPost = await Post.findById(postId)
+      .populate('author')
+      .populate('skill')
+
     return NextResponse.json({
-      postId: post._id,
-      userId,
-      likes: post.likes
+      success: true,
+      postId: updatedPost._id,
+      likes: updatedPost.likes
     })
+
   } catch (error) {
-    console.error('Error liking post:', error)
+    console.error('Error updating likes:', error)
     return NextResponse.json(
-      { error: 'Failed to like post' },
+      { 
+        error: 'Failed to update post likes',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      },
       { status: 500 }
     )
   }
