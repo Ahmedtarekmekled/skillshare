@@ -5,6 +5,10 @@ import Post from '@/models/Post'
 import { connectToDatabase } from '@/lib/mongodb'
 import { Server } from 'socket.io'
 
+declare global {
+  var io: Server | undefined
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -21,6 +25,9 @@ export async function DELETE(
     await connectToDatabase()
 
     const post = await Post.findById(params.id)
+      .populate('author', '_id')
+      .lean()
+
     if (!post) {
       return NextResponse.json(
         { error: 'Post not found' },
@@ -28,16 +35,25 @@ export async function DELETE(
       )
     }
 
-    if (post.author.toString() !== session.user.id) {
+    if (post.author._id.toString() !== session.user.id) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - You can only delete your own posts' },
         { status: 403 }
       )
     }
 
-    await post.deleteOne()
+    await Post.findByIdAndDelete(params.id)
 
-    return NextResponse.json({ message: 'Post deleted successfully' })
+    // Emit socket event for real-time update
+    if (global.io) {
+      global.io.emit('postDeleted', params.id)
+    }
+
+    return NextResponse.json({ 
+      success: true,
+      message: 'Post deleted successfully',
+      postId: params.id
+    })
   } catch (error) {
     console.error('Error deleting post:', error)
     return NextResponse.json(
@@ -64,6 +80,8 @@ export async function PUT(
 
     const body = await request.json()
     const post = await Post.findById(params.id)
+      .populate('author', '_id')
+      .lean()
 
     if (!post) {
       return NextResponse.json(
@@ -72,9 +90,9 @@ export async function PUT(
       )
     }
 
-    if (post.author.toString() !== session.user.id) {
+    if (post.author._id.toString() !== session.user.id) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: 'Unauthorized - You can only edit your own posts' },
         { status: 403 }
       )
     }
@@ -87,63 +105,16 @@ export async function PUT(
       .populate('author', 'name image')
       .populate('skill', 'name')
 
+    // Emit socket event for real-time update
+    if (global.io) {
+      global.io.emit('postUpdated', updatedPost)
+    }
+
     return NextResponse.json(updatedPost)
   } catch (error) {
     console.error('Error updating post:', error)
     return NextResponse.json(
       { error: 'Failed to update post' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions)
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    await connectToDatabase()
-
-    const post = await Post.findById(params.id)
-    if (!post) {
-      return NextResponse.json(
-        { error: 'Post not found' },
-        { status: 404 }
-      )
-    }
-
-    const userId = session.user.id
-    const likeIndex = post.likes.indexOf(userId)
-
-    if (likeIndex === -1) {
-      post.likes.push(userId)
-    } else {
-      post.likes.splice(likeIndex, 1)
-    }
-
-    await post.save()
-
-    // Emit socket event
-    const io = new Server()
-    io.emit('postLiked', {
-      postId: params.id,
-      userId,
-      likes: post.likes
-    })
-
-    return NextResponse.json({ likes: post.likes })
-  } catch (error) {
-    console.error('Error liking post:', error)
-    return NextResponse.json(
-      { error: 'Failed to like post' },
       { status: 500 }
     )
   }

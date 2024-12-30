@@ -10,9 +10,13 @@ interface User {
   _id: string
   name: string
   email: string
-  image: string
+  image?: string
   bio?: string
-  skills: Array<{
+  skillsToShare: Array<{
+    _id: string
+    name: string
+  }>
+  skillsToLearn: Array<{
     _id: string
     name: string
   }>
@@ -26,7 +30,7 @@ interface Post {
   author: {
     _id: string
     name: string
-    image: string
+    image?: string
   }
   skill: {
     _id: string
@@ -51,8 +55,14 @@ export default function ProfilePage({ params }: { params: { id: string } }) {
           fetch(`/api/users/${params.id}/posts`)
         ])
 
-        if (!userRes.ok || !postsRes.ok) {
-          throw new Error('Failed to fetch user data')
+        if (!userRes.ok) {
+          const errorData = await userRes.json()
+          throw new Error(errorData.error || 'Failed to fetch user data')
+        }
+
+        if (!postsRes.ok) {
+          const errorData = await postsRes.json()
+          throw new Error(errorData.error || 'Failed to fetch user posts')
         }
 
         const [userData, postsData] = await Promise.all([
@@ -64,7 +74,7 @@ export default function ProfilePage({ params }: { params: { id: string } }) {
         setPosts(postsData)
       } catch (error) {
         console.error('Error fetching user data:', error)
-        setError('Failed to load user data')
+        setError(error instanceof Error ? error.message : 'Failed to load user data')
       } finally {
         setLoading(false)
       }
@@ -97,7 +107,7 @@ export default function ProfilePage({ params }: { params: { id: string } }) {
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-4">
             <Image
-              src={user.image || `/api/avatar/${user._id}`}
+              src={user.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}`}
               alt={user.name}
               width={100}
               height={100}
@@ -105,65 +115,85 @@ export default function ProfilePage({ params }: { params: { id: string } }) {
             />
             <div>
               <h1 className="text-2xl font-bold">{user.name}</h1>
-              <p className="text-gray-600">{user.email}</p>
-              {user.bio && <p className="mt-2 text-gray-700">{user.bio}</p>}
+              {user.bio && <p className="text-gray-600 mt-2">{user.bio}</p>}
             </div>
           </div>
-          {session?.user?.id !== user._id && (
+          {session && session.user.id !== params.id && (
             <button
               onClick={() => setShowChat(true)}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center"
+              className="text-blue-500 hover:text-blue-700"
             >
-              <MessageCircle className="w-5 h-5 mr-2" />
-              Message
+              <MessageCircle className="h-6 w-6" />
             </button>
           )}
         </div>
 
-        <div className="mt-6">
-          <h2 className="text-lg font-semibold mb-2">Skills</h2>
-          <div className="flex flex-wrap gap-2">
-            {user.skills.map((skill) => (
-              <span
-                key={skill._id}
-                className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
-              >
-                {skill.name}
-              </span>
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Skills to Share</h2>
+            <div className="flex flex-wrap gap-2">
+              {user.skillsToShare.length > 0 ? (
+                user.skillsToShare.map((skill) => (
+                  <span
+                    key={skill._id}
+                    className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
+                  >
+                    {skill.name}
+                  </span>
+                ))
+              ) : (
+                <p className="text-gray-500">No skills to share listed</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-xl font-semibold mb-4">Looking to Learn</h2>
+            <div className="flex flex-wrap gap-2">
+              {user.skillsToLearn.length > 0 ? (
+                user.skillsToLearn.map((skill) => (
+                  <span
+                    key={skill._id}
+                    className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm"
+                  >
+                    {skill.name}
+                  </span>
+                ))
+              ) : (
+                <p className="text-gray-500">No skills to learn listed</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showChat && session && (
+        <Chat
+          recipientId={params.id}
+          recipientName={user.name}
+          onClose={() => setShowChat(false)}
+        />
+      )}
+
+      <div className="mt-8">
+        <h2 className="text-2xl font-bold mb-6">Posts</h2>
+        {posts.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {posts.map((post) => (
+              <div key={post._id} className="bg-white rounded-lg shadow-md p-6">
+                <h3 className="text-xl font-semibold mb-2">{post.title}</h3>
+                <p className="text-gray-600 mb-4">{post.description}</p>
+                <div className="flex items-center justify-between text-sm text-gray-500">
+                  <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+                  <span>{post.likes.length} likes</span>
+                </div>
+              </div>
             ))}
           </div>
-        </div>
+        ) : (
+          <p className="text-gray-500">No posts yet</p>
+        )}
       </div>
-
-      <div>
-        <h2 className="text-xl font-bold mb-4">Posts</h2>
-        <div className="space-y-6">
-          {posts.map((post) => (
-            <div key={post._id} className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-xl font-semibold mb-2">{post.title}</h3>
-              <p className="text-gray-700 mb-4">{post.description}</p>
-              <div className="flex justify-between items-center">
-                <span className="inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-                  {post.skill.name}
-                </span>
-                <span className="text-gray-500 text-sm">
-                  {new Date(post.createdAt).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {showChat && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg w-full max-w-2xl h-[80vh] flex flex-col">
-            <Chat
-              recipientId={user._id}
-              onClose={() => setShowChat(false)}
-            />
-          </div>
-        </div>
-      )}
     </div>
   )
+}

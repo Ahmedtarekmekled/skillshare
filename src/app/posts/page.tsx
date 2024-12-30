@@ -45,24 +45,27 @@ export default function PostsPage() {
   const [socket, setSocket] = useState<any>(null)
 
   useEffect(() => {
+    fetchPosts()
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
     const newSocket = io(socketUrl, {
       transports: ['polling'],
       reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
     })
 
     setSocket(newSocket)
 
-    newSocket.on('connect', () => {
-      console.log('Connected to socket server')
+    newSocket.on('postCreated', (newPost: Post) => {
+      console.log('New post received:', newPost)
+      setPosts(prevPosts => [newPost, ...prevPosts])
     })
 
-    newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error)
+    newSocket.on('postDeleted', (deletedPostId: string) => {
+      console.log('Post deleted:', deletedPostId)
+      setPosts(prevPosts => prevPosts.filter(post => post._id !== deletedPostId))
     })
 
-    newSocket.on('postLiked', ({ postId, userId, likes }) => {
+    newSocket.on('postLiked', ({ postId, userId, likes }: { postId: string, userId: string, likes: string[] }) => {
+      console.log('Post liked/unliked:', postId, userId, likes)
       setPosts(prevPosts => 
         prevPosts.map(post => 
           post._id === postId ? { ...post, likes } : post
@@ -70,11 +73,7 @@ export default function PostsPage() {
       )
     })
 
-    newSocket.on('postDeleted', (postId) => {
-      setPosts(prevPosts => prevPosts.filter(post => post._id !== postId))
-    })
-
-    newSocket.on('postUpdated', (updatedPost) => {
+    newSocket.on('postUpdated', (updatedPost: Post) => {
       setPosts(prevPosts => 
         prevPosts.map(post => 
           post._id === updatedPost._id ? updatedPost : post
@@ -87,39 +86,36 @@ export default function PostsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const [postsRes, skillsRes] = await Promise.all([
-          fetch('/api/posts'),
-          fetch('/api/skills')
-        ])
-        
-        if (!postsRes.ok || !skillsRes.ok) {
-          throw new Error('Failed to fetch data')
-        }
-
-        const [postsData, skillsData] = await Promise.all([
-          postsRes.json(),
-          skillsRes.json()
-        ])
-
-        setPosts(postsData)
-        setSkills(skillsData)
-      } catch (error) {
-        console.error('Error fetching data:', error)
-        setError('Failed to load data')
-      } finally {
-        setLoading(false)
+  const fetchPosts = async () => {
+    try {
+      const [postsRes, skillsRes] = await Promise.all([
+        fetch('/api/posts'),
+        fetch('/api/skills')
+      ])
+      
+      if (!postsRes.ok || !skillsRes.ok) {
+        throw new Error('Failed to fetch data')
       }
-    }
 
-    fetchData()
-  }, [])
+      const [postsData, skillsData] = await Promise.all([
+        postsRes.json(),
+        skillsRes.json()
+      ])
+
+      setPosts(postsData)
+      setSkills(skillsData)
+    } catch (error) {
+      console.error('Error fetching data:', error)
+      setError('Failed to load data')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+    if (!session?.user) return
+
     try {
       const formData = new FormData()
       formData.append('title', newTitle)
@@ -131,53 +127,52 @@ export default function PostsPage() {
         body: formData,
       })
 
-      if (!response.ok) {
-        throw new Error('Failed to create post')
-      }
+      if (!response.ok) throw new Error('Failed to create post')
 
       const newPost = await response.json()
-      setPosts(prev => [newPost, ...prev])
+      
+      // Add the new post to the local state immediately
+      setPosts(prevPosts => [newPost, ...prevPosts])
+      
+      // Emit socket event for real-time update to other clients
+      socket?.emit('postCreated', newPost)
+
       setShowCreateModal(false)
       setNewTitle('')
       setNewDescription('')
       setSelectedSkill('')
-    } catch (error) {
-      console.error('Error creating post:', error)
-      setError('Failed to create post')
+    } catch (err: any) {
+      setError(err.message)
     }
   }
 
   const handleLike = async (postId: string) => {
+    if (!session?.user) return
+
     try {
-      console.log('Attempting to like post:', postId)
       const response = await fetch(`/api/posts/${postId}/like`, {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        }
       })
+
+      if (!response.ok) throw new Error('Failed to like post')
+
+      const { likes } = await response.json()
       
-      const data = await response.json()
-      console.log('Response data:', data)
-      
-      if (!response.ok) {
-        throw new Error(data.error || data.details || 'Failed to like post')
-      }
-      
-      if (data.success) {
-        setPosts(prevPosts => 
-          prevPosts.map(post => 
-            post._id === data.postId 
-              ? { ...post, likes: Array.isArray(data.likes) ? data.likes : [] } 
-              : post
-          )
+      // Update the local state immediately
+      setPosts(prevPosts => 
+        prevPosts.map(post => 
+          post._id === postId ? { ...post, likes } : post
         )
-      } else {
-        console.error('Unexpected response format:', data)
-      }
-    } catch (error) {
-      console.error('Error liking post:', error)
+      )
+      
+      // Emit socket event for real-time update to other clients
+      socket?.emit('postLiked', { 
+        postId, 
+        userId: session.user.id,
+        likes 
+      })
+    } catch (err: any) {
+      setError(err.message)
     }
   }
 
@@ -186,10 +181,16 @@ export default function PostsPage() {
       const response = await fetch(`/api/posts/${postId}`, {
         method: 'DELETE',
       })
+
       if (!response.ok) throw new Error('Failed to delete post')
-    } catch (error) {
-      console.error('Error deleting post:', error)
-      setError('Failed to delete post')
+
+      // Update the local state immediately
+      setPosts(prevPosts => prevPosts.filter(post => post._id !== postId))
+      
+      // Emit socket event for real-time update to other clients
+      socket?.emit('postDeleted', postId)
+    } catch (err: any) {
+      setError(err.message)
     }
   }
 
@@ -253,15 +254,25 @@ export default function PostsPage() {
           <div key={post._id} className="bg-white p-6 rounded-lg shadow-md mb-4">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center">
-                <Image
-                  src={post.author.image || '/images/unknown.png'}
-                  alt={post.author.name}
-                  width={40}
-                  height={40}
-                  className="rounded-full mr-4"
-                />
+                <button 
+                  onClick={() => router.push(`/profile/${post.author._id}`)}
+                  className="focus:outline-none"
+                >
+                  <Image
+                    src={post.author.image || '/images/unknown.png'}
+                    alt={post.author.name}
+                    width={40}
+                    height={40}
+                    className="rounded-full mr-4 hover:opacity-80 transition-opacity"
+                  />
+                </button>
                 <div>
-                  <h3 className="font-semibold">{post.author.name}</h3>
+                  <button 
+                    onClick={() => router.push(`/profile/${post.author._id}`)}
+                    className="font-semibold hover:text-blue-500 transition-colors focus:outline-none"
+                  >
+                    {post.author.name}
+                  </button>
                   <p className="text-sm text-gray-500">
                     {new Date(post.createdAt).toLocaleDateString()}
                   </p>

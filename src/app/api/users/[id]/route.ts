@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { connectToDatabase } from '@/lib/mongodb'
 import User from '@/models/User'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 
 export async function GET(
   request: Request,
@@ -10,9 +12,18 @@ export async function GET(
     await connectToDatabase()
     
     const user = await User.findById(params.id)
-      .populate('skillsToShare')
-      .populate('skillsToLearn')
+      .populate({
+        path: 'skillsToShare',
+        model: 'Skill',
+        select: 'name'
+      })
+      .populate({
+        path: 'skillsToLearn',
+        model: 'Skill',
+        select: 'name'
+      })
       .select('-password')
+      .lean()
 
     if (!user) {
       return NextResponse.json(
@@ -36,6 +47,14 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session || session.user.id !== params.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     await connectToDatabase()
     
     const body = await request.json()
@@ -44,9 +63,18 @@ export async function PUT(
       { $set: body },
       { new: true }
     )
-      .populate('skillsToShare')
-      .populate('skillsToLearn')
+      .populate({
+        path: 'skillsToShare',
+        model: 'Skill',
+        select: 'name'
+      })
+      .populate({
+        path: 'skillsToLearn',
+        model: 'Skill',
+        select: 'name'
+      })
       .select('-password')
+      .lean()
 
     if (!user) {
       return NextResponse.json(
@@ -70,6 +98,14 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session || session.user.id !== params.id) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     await connectToDatabase()
     
     const user = await User.findByIdAndDelete(params.id)
@@ -81,7 +117,7 @@ export async function DELETE(
       )
     }
 
-    return NextResponse.json({ message: 'User deleted successfully' })
+    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error deleting user:', error)
     return NextResponse.json(

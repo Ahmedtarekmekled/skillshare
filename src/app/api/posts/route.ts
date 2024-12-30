@@ -35,11 +35,22 @@ export async function POST(req: NextRequest) {
     }
 
     await connectToDatabase()
-    const formData = await req.formData()
     
-    const title = formData.get('title') as string
-    const description = formData.get('description') as string
-    const skillId = formData.get('skillId') as string
+    // Handle both JSON and FormData
+    let title: string, description: string, skillId: string;
+    
+    const contentType = req.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      const body = await req.json();
+      title = body.title;
+      description = body.description;
+      skillId = body.skillId;
+    } else {
+      const formData = await req.formData();
+      title = formData.get('title') as string;
+      description = formData.get('description') as string;
+      skillId = formData.get('skillId') as string;
+    }
 
     if (!title || !description || !skillId) {
       return NextResponse.json(
@@ -51,16 +62,20 @@ export async function POST(req: NextRequest) {
     const post = await Post.create({
       title,
       description,
-      author: session.user.id,
       skill: skillId,
-      likes: [],
+      author: session.user.id,
+      likes: []
     })
 
     const populatedPost = await Post.findById(post._id)
       .populate('author', 'name image')
       .populate('skill', 'name')
-      .populate('likes', '_id')
-      .exec()
+      .lean()
+
+    // Emit socket event for real-time update
+    if (global.io) {
+      global.io.emit('postCreated', populatedPost)
+    }
 
     return NextResponse.json(populatedPost)
   } catch (error: any) {

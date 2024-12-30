@@ -3,7 +3,11 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Post from '@/models/Post'
 import { connectToDatabase } from '@/lib/mongodb'
-import mongoose from 'mongoose'
+import { Server } from 'socket.io'
+
+declare global {
+  var io: Server | undefined
+}
 
 export async function POST(
   request: NextRequest,
@@ -11,7 +15,7 @@ export async function POST(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user?.id) {
+    if (!session) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -20,12 +24,7 @@ export async function POST(
 
     await connectToDatabase()
 
-    // Convert IDs to ObjectId
-    const postId = new mongoose.Types.ObjectId(params.id)
-    const userId = new mongoose.Types.ObjectId(session.user.id)
-
-    // Find the post
-    const post = await Post.findById(postId)
+    const post = await Post.findById(params.id)
     if (!post) {
       return NextResponse.json(
         { error: 'Post not found' },
@@ -33,43 +32,37 @@ export async function POST(
       )
     }
 
-    // Initialize likes array if undefined
-    if (!post.likes) {
-      post.likes = []
-    }
+    const userId = session.user.id
+    const userLikedPost = post.likes.includes(userId)
 
-    // Check if user already liked the post
-    const alreadyLiked = post.likes.some(id => id.toString() === userId.toString())
-
-    if (!alreadyLiked) {
-      // Add the like
-      post.likes.push(userId)
+    if (userLikedPost) {
+      post.likes = post.likes.filter((id: string) => id !== userId)
     } else {
-      // Remove the like
-      post.likes = post.likes.filter(id => id.toString() !== userId.toString())
+      post.likes.push(userId)
     }
 
-    // Save the post
     await post.save()
 
-    // Get updated post with populated fields
-    const updatedPost = await Post.findById(postId)
-      .populate('author')
-      .populate('skill')
+    // Emit socket event for real-time update
+    if (global.io) {
+      global.io.emit('postLiked', {
+        postId: params.id,
+        userId: userId,
+        likes: post.likes
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      postId: updatedPost._id,
-      likes: updatedPost.likes
+      postId: params.id,
+      userId: userId,
+      likes: post.likes,
+      action: userLikedPost ? 'unlike' : 'like'
     })
-
   } catch (error) {
-    console.error('Error updating likes:', error)
+    console.error('Error liking post:', error)
     return NextResponse.json(
-      { 
-        error: 'Failed to update post likes',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to like post' },
       { status: 500 }
     )
   }

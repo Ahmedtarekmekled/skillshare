@@ -32,8 +32,8 @@ if (!io) {
       console.error('Socket error:', error)
     })
 
-    socket.on('message', (data) => {
-      io.emit('message', data)
+    socket.on('postCreated', (data) => {
+      io.emit('postCreated', data)
     })
 
     socket.on('postLiked', (data) => {
@@ -46,6 +46,10 @@ if (!io) {
 
     socket.on('postUpdated', (data) => {
       io.emit('postUpdated', data)
+    })
+
+    socket.on('message', (data) => {
+      io.emit('message', data)
     })
   })
 
