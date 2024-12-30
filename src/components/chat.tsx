@@ -126,37 +126,44 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
   if (!recipient) return null
 
   return (
-    <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-lg shadow-lg flex flex-col">
-      {/* Chat header */}
-      <div className="p-4 border-b flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Image
-            src={recipient.image || `/api/avatar/${recipient._id}`}
-            alt={recipient.name}
-            width={32}
-            height={32}
-            className="rounded-full"
-          />
-          <span className="font-semibold">{recipient.name}</span>
+    <div className="fixed bottom-4 right-4 w-80 h-96 bg-white rounded-lg shadow-lg">
+      <div className="flex flex-col h-full">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center mb-4">
+            <Image
+              src={recipient?.image || '/images/unknown.png'}
+              alt={recipient?.name || 'User'}
+              width={40}
+              height={40}
+              className="rounded-full mr-3"
+            />
+            <div>
+              <h3 className="font-semibold">{recipient?.name}</h3>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X className="h-6 w-6" />
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-gray-700"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
 
-      {/* Messages */}
-      <div className="flex-1 p-4 overflow-y-auto">
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 pb-32">
           {messages.map((message) => (
             <div
               key={message._id}
-              className={`flex ${
-                message.sender._id === session?.user?.id ? 'justify-end' : 'justify-start'
-              }`}
+              className={`flex items-start mb-4 ${message.sender._id === session?.user?.id ? 'justify-end' : ''}`}
             >
+              {message.sender._id !== session?.user?.id && (
+                <Image
+                  src={message.sender.image || '/images/unknown.png'}
+                  alt={message.sender.name}
+                  width={32}
+                  height={32}
+                  className="rounded-full mr-2"
+                />
+              )}
               <div
                 className={`max-w-[70%] rounded-lg p-3 ${
                   message.sender._id === session?.user?.id
@@ -165,7 +172,7 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
                 }`}
               >
                 <p>{message.content}</p>
-                <span className="text-xs opacity-75">
+                <span className="text-xs opacity-75 mt-1 block">
                   {new Date(message.createdAt).toLocaleTimeString()}
                 </span>
               </div>
@@ -173,26 +180,25 @@ export default function Chat({ recipientId, onClose }: ChatProps) {
           ))}
           <div ref={messagesEndRef} />
         </div>
-      </div>
 
-      {/* Message input */}
-      <form onSubmit={handleSendMessage} className="p-4 border-t">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 rounded-lg border px-4 py-2 focus:outline-none focus:border-blue-500"
-          />
-          <button
-            type="submit"
-            className="bg-blue-500 text-white rounded-lg p-2 hover:bg-blue-600"
-          >
-            <Send className="w-5 h-5" />
-          </button>
+        <div className="absolute bottom-0 left-0 right-0 bg-white border-t p-4">
+          <form onSubmit={handleSendMessage} className="flex space-x-2">
+            <input
+              type="text"
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              placeholder="Type a message..."
+              className="flex-1 rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500"
+            />
+            <button
+              type="submit"
+              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"
+            >
+              Send
+            </button>
+          </form>
         </div>
-      </form>
+      </div>
     </div>
   )
 }

@@ -3,6 +3,11 @@ import { getToken } from 'next-auth/jwt'
 import { NextRequestWithAuth } from 'next-auth/middleware'
 
 export default async function middleware(request: NextRequestWithAuth) {
+  // Allow Socket.IO polling and WebSocket upgrade requests
+  if (request.nextUrl.pathname.startsWith('/api/socket')) {
+    return NextResponse.next()
+  }
+
   const token = await getToken({ req: request })
   const isAuthenticated = !!token
 
@@ -39,7 +44,7 @@ export const config = {
     '/posts/:path*',
     '/messages/:path*',
     '/profile/:path*',
-    '/api/((?!auth).*)/:path*',
+    '/api/((?!auth|socket).*)/:path*',
     '/auth/signin',
     '/auth/signup'
   ]

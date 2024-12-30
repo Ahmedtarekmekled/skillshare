@@ -10,6 +10,7 @@ export async function GET() {
     const posts = await Post.find()
       .populate('author', 'name image')
       .populate('skill', 'name')
+      .populate('likes', '_id')
       .sort({ createdAt: -1 })
       .exec()
 
@@ -37,38 +38,34 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData()
     
     const title = formData.get('title') as string
-    const content = formData.get('content') as string
+    const description = formData.get('description') as string
     const skillId = formData.get('skillId') as string
-    const image = formData.get('image') as File | null
 
-    if (!title || !content || !skillId) {
+    if (!title || !description || !skillId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       )
     }
 
-    // TODO: Handle image upload to cloud storage
-    const imageUrl = image ? '/placeholder-image.jpg' : undefined
-
     const post = await Post.create({
       title,
-      content,
+      description,
       author: session.user.id,
       skill: skillId,
-      images: imageUrl ? [imageUrl] : [],
+      likes: [],
     })
 
     const populatedPost = await Post.findById(post._id)
       .populate('author', 'name image')
       .populate('skill', 'name')
+      .populate('likes', '_id')
       .exec()
 
     return NextResponse.json(populatedPost)
   } catch (error: any) {
     console.error('Error creating post:', error)
     
-    // Return more specific error messages
     if (error.name === 'ValidationError') {
       return NextResponse.json(
         { error: 'Invalid data provided', details: error.message },

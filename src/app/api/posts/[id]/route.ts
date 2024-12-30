@@ -3,9 +3,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import Post from '@/models/Post'
 import { connectToDatabase } from '@/lib/mongodb'
+import { Server } from 'socket.io'
 
 export async function DELETE(
-  req: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -18,8 +19,8 @@ export async function DELETE(
     }
 
     await connectToDatabase()
-    const post = await Post.findById(params.id)
 
+    const post = await Post.findById(params.id)
     if (!post) {
       return NextResponse.json(
         { error: 'Post not found' },
@@ -27,15 +28,15 @@ export async function DELETE(
       )
     }
 
-    // Check if the user is the author of the post
     if (post.author.toString() !== session.user.id) {
       return NextResponse.json(
-        { error: 'Not authorized to delete this post' },
+        { error: 'Unauthorized' },
         { status: 403 }
       )
     }
 
     await post.deleteOne()
+
     return NextResponse.json({ message: 'Post deleted successfully' })
   } catch (error) {
     console.error('Error deleting post:', error)
@@ -46,8 +47,8 @@ export async function DELETE(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
+export async function PUT(
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -60,6 +61,8 @@ export async function PATCH(
     }
 
     await connectToDatabase()
+
+    const body = await request.json()
     const post = await Post.findById(params.id)
 
     if (!post) {
@@ -69,42 +72,78 @@ export async function PATCH(
       )
     }
 
-    // Check if the user is the author of the post
     if (post.author.toString() !== session.user.id) {
       return NextResponse.json(
-        { error: 'Not authorized to edit this post' },
+        { error: 'Unauthorized' },
         { status: 403 }
       )
     }
 
-    const formData = await req.formData()
-    const title = formData.get('title') as string
-    const content = formData.get('content') as string
-    const skillId = formData.get('skillId') as string
-    const image = formData.get('image') as File | null
-
-    // TODO: Handle image upload to cloud storage
-    const imageUrl = image ? '/placeholder-image.jpg' : undefined
-
     const updatedPost = await Post.findByIdAndUpdate(
       params.id,
-      {
-        title: title || post.title,
-        content: content || post.content,
-        skill: skillId || post.skill,
-        ...(imageUrl && { $push: { images: imageUrl } }),
-      },
+      { $set: body },
       { new: true }
     )
       .populate('author', 'name image')
       .populate('skill', 'name')
-      .exec()
 
     return NextResponse.json(updatedPost)
   } catch (error) {
     console.error('Error updating post:', error)
     return NextResponse.json(
       { error: 'Failed to update post' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    await connectToDatabase()
+
+    const post = await Post.findById(params.id)
+    if (!post) {
+      return NextResponse.json(
+        { error: 'Post not found' },
+        { status: 404 }
+      )
+    }
+
+    const userId = session.user.id
+    const likeIndex = post.likes.indexOf(userId)
+
+    if (likeIndex === -1) {
+      post.likes.push(userId)
+    } else {
+      post.likes.splice(likeIndex, 1)
+    }
+
+    await post.save()
+
+    // Emit socket event
+    const io = new Server()
+    io.emit('postLiked', {
+      postId: params.id,
+      userId,
+      likes: post.likes
+    })
+
+    return NextResponse.json({ likes: post.likes })
+  } catch (error) {
+    console.error('Error liking post:', error)
+    return NextResponse.json(
+      { error: 'Failed to like post' },
       { status: 500 }
     )
   }

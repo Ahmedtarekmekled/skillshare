@@ -5,11 +5,10 @@ const PostSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  content: {
+  description: {
     type: String,
     required: true,
   },
-  images: [String],
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -20,13 +19,9 @@ const PostSchema = new mongoose.Schema({
     ref: 'Skill',
     required: true,
   },
-  likes: {
-    type: Number,
-    default: 0,
-  },
-  comments: [{
+  likes: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Comment'
+    ref: 'User'
   }],
 }, {
   timestamps: true,

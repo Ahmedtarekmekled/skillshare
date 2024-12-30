@@ -1,8 +1,13 @@
 {
   "/not-found": "app/not-found.js",
   "/posts/page": "app/posts/page.js",
+  "/explore/page": "app/explore/page.js",
+  "/auth/signin/page": "app/auth/signin/page.js",
+  "/messages/page": "app/messages/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/api/messages/route": "app/api/messages/route.js",
+  "/api/users/[id]/route": "app/api/users/[id]/route.js",
   "/api/auth/[...nextauth]/route": "app/api/auth/[...nextauth]/route.js",
-  "/api/seed/route": "app/api/seed/route.js",
-  "/api/skills/route": "app/api/skills/route.js",
-  "/api/posts/route": "app/api/posts/route.js"
+  "/api/users/route": "app/api/users/route.js",
+  "/api/messages/conversations/route": "app/api/messages/conversations/route.js"
 }

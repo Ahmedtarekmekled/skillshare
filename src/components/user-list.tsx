@@ -72,120 +72,70 @@ export function UserList({ searchQuery = '' }: UserListProps) {
     setSelectedUser(userId)
   }
 
-  if (loading) {
-    return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="bg-white p-6 rounded-lg shadow-md animate-pulse">
-            <div className="flex items-center space-x-4 mb-4">
-              <div className="w-12 h-12 bg-gray-200 rounded-full" />
-              <div className="flex-1">
-                <div className="h-4 bg-gray-200 rounded w-3/4" />
-              </div>
-            </div>
-            <div className="space-y-3">
-              <div className="h-4 bg-gray-200 rounded w-5/6" />
-              <div className="h-4 bg-gray-200 rounded w-4/6" />
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="text-center text-red-500 py-8">
-        <p>{error}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="mt-4 text-blue-500 hover:underline"
-        >
-          Try again
-        </button>
-      </div>
-    )
-  }
-
-  if (filteredUsers.length === 0) {
-    return (
-      <div className="text-center text-gray-500 py-8">
-        <p>No users found matching your search criteria.</p>
-      </div>
-    )
-  }
-
   return (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredUsers.map((user) => (
-          <div key={user._id} className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-4">
+    <div>
+      {loading ? (
+        <div className="flex justify-center items-center min-h-[200px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      ) : error ? (
+        <div className="text-red-500 text-center">{error}</div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="text-gray-500 text-center">No users found</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredUsers.map((user) => (
+            <div key={user._id} className="bg-white rounded-lg shadow-md p-6">
+              <div className="flex items-center mb-4">
                 <Image
-                  src={user.image || `/api/avatar/${user._id}`}
+                  src={user.image || '/images/unknown.png'}
                   alt={user.name}
                   width={48}
                   height={48}
-                  className="rounded-full"
+                  className="rounded-full mr-4"
                 />
                 <div>
-                  <Link 
-                    href={`/profile/${user._id}`}
-                    className="text-lg font-semibold hover:text-blue-600"
-                  >
-                    {user.name}
-                  </Link>
-                  <p className="text-sm text-gray-500">{user.bio ? user.bio.slice(0, 60) + '...' : 'No bio available'}</p>
+                  <h3 className="font-semibold">{user.name}</h3>
+                  <p className="text-gray-500 text-sm">{user.email}</p>
                 </div>
               </div>
-              <button
-                onClick={() => handleMessageClick(user._id)}
-                className="text-gray-400 hover:text-blue-500 transition-colors"
-                title="Send message"
-              >
-                <MessageCircle className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-gray-600 mb-2">Skills to Share</h4>
-                <div className="flex flex-wrap gap-2">
-                  {(user.skillsToShare || []).map((skill) => (
-                    <span
-                      key={`${user._id}-share-${skill._id}`}
-                      className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800"
-                    >
-                      {skill.name}
-                    </span>
-                  ))}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-600 mb-2">Skills to Share</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(user.skillsToShare || []).map((skill) => (
+                      <span
+                        key={`${user._id}-share-${skill._id}`}
+                        className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800"
+                      >
+                        {skill.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h4 className="text-sm font-medium text-gray-600 mb-2">Looking to Learn</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(user.skillsToLearn || []).map((skill) => (
+                      <span
+                        key={`${user._id}-learn-${skill._id}`}
+                        className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800"
+                      >
+                        {skill.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div>
-                <h4 className="text-sm font-medium text-gray-600 mb-2">Looking to Learn</h4>
-                <div className="flex flex-wrap gap-2">
-                  {(user.skillsToLearn || []).map((skill) => (
-                    <span
-                      key={`${user._id}-learn-${skill._id}`}
-                      className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800"
-                    >
-                      {skill.name}
-                    </span>
-                  ))}
-                </div>
+              <div className="mt-4 flex justify-end">
+                <Link href="/chat" className="text-blue-500 hover:text-blue-700">
+                  <MessageCircle className="h-6 w-6" />
+                </Link>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-
-      {selectedUser && (
-        <Chat
-          recipientId={selectedUser}
-          onClose={() => setSelectedUser(null)}
-        />
+          ))}
+        </div>
       )}
-    </>
+    </div>
   )
 }
